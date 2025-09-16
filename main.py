@@ -10,6 +10,9 @@ import json
 import uvicorn
 from decimal import Decimal
 import asyncio
+from endpoints import router as router_endpoints
+from endpoints_soroban import router as soroban_router
+import os
 from endpoints import router
 from database_endpoints import router as db_router
 
@@ -28,9 +31,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Incluir routers
-app.include_router(router)  # Endpoints originais
-app.include_router(db_router, prefix="/api/v1")  # Novos endpoints com prefixo
+@app.get("/")
+async def root():
+    return {"message": "TrackTrade API", "status": "healthy", "version": "1.0.0"}
+
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow(),
+        "version": "1.0.0"
+    }
+
+app.include_router(db_router, prefix="/api/v1")
+app.include_router(router_endpoints)
+app.include_router(soroban_router)
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(
+        "main:app",
+        host=os.getenv("API_HOST", "0.0.0.0"),
+        port=int(os.getenv("API_PORT", 8000)),
+        reload=os.getenv("API_RELOAD", "false").lower() == "true"
+    )
