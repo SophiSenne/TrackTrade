@@ -8,6 +8,10 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from enum import Enum
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 from stellar_sdk import (
     Server, Keypair, Network, TransactionBuilder, 
@@ -514,15 +518,10 @@ def stroops_to_xlm(stroops: int) -> Decimal:
     """Convert stroops to XLM"""
     return Decimal(stroops) / STROOPS_PER_XLM
 
-
-# Configuration
-CONTRACT_ADDRESS = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQAHHAGK7Q"
-ADMIN_SECRET_KEY = "SAIPPNG3AGHSK2CLHIYQMVBPHISOOPT64MMW2PQGER2NIANN6TJU7"
-
 # Global instances
 contract_manager = SorobanContractManager(
-    CONTRACT_ADDRESS,
-    Keypair.from_secret(ADMIN_SECRET_KEY)
+    os.getenv("ATHLETE_TOKEN_CONTRACT"),
+    Keypair.from_secret(os.getenv("ADMIN_SECRET_KEY"))
 )
 
 # Event handlers
@@ -537,7 +536,7 @@ async def handle_revenue_event(event: Dict):
     # Add custom logic here
 
 event_listener = EnhancedEventListener(
-    CONTRACT_ADDRESS,
+    os.getenv("ATHLETE_TOKEN_CONTRACT"),
     callback_handlers={
         "investment": handle_investment_event,
         "revenue_distribution": handle_revenue_event
