@@ -13,6 +13,8 @@ import asyncio
 from endpoints import router as router_endpoints
 from endpoints_soroban import router as soroban_router
 import os
+from endpoints import router
+from database_endpoints import router as db_router
 
 # Configuração da aplicação
 app = FastAPI(
@@ -41,7 +43,8 @@ async def health_check():
         "version": "1.0.0"
     }
 
-# app.include_router(router_endpoints)
+app.include_router(db_router, prefix="/api/v1")
+app.include_router(router_endpoints)
 app.include_router(soroban_router)
 
 if __name__ == "__main__":
