@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 # Import your existing modules
 from stellar_config import HORIZON_URL, SOROBAN_RPC_URL, NETWORK_PASSPHRASE
-from pydantic_models import AthleteData, PerformanceMetrics, TokenStatus
 
 # Constants
 STROOPS_PER_XLM = 10_000_000
@@ -68,10 +67,6 @@ class SorobanContractManager:
         
         logger.info(f"Initialized SorobanContractManager for contract {contract_address}")
     
-    def generate_token_id(self, athlete_name: str, timestamp: int) -> bytes:
-        """Generate a unique 32-byte token ID"""
-        data = f"{athlete_name}_{timestamp}_{self.contract_address}".encode('utf-8')
-        return hashlib.sha256(data).digest()
     
     async def _execute_contract_function(
         self, 
@@ -187,62 +182,35 @@ class SorobanContractManager:
             logger.warning(f"Failed to process simulation result: {e}")
             return {"error": str(e), "raw_result": str(result)}
     
-    async def initialize_contract(self) -> ContractCallResult:
-        """Initialize the contract with admin"""
-        logger.info("Initializing contract...")
-        
-        args = [scval.Address(StellarAddress(self.admin_keypair.public_key))]
-        
-        result = await self._execute_contract_function("initialize", args)
-        
-        if result.success:
-            logger.info(f"Contract initialized successfully: {result.transaction_hash}")
-        else:
-            logger.error(f"Contract initialization failed: {result.error_message}")
-        
-        return result
-    
-    async def create_athlete_token(
-        self, 
-        athlete_data: AthleteData, 
-        total_supply: int,
-        price_per_token: Decimal,
-        issuer_keypair: Keypair
-    ) -> ContractCallResult:
-        """Create a new athlete token"""
+    async def balance(self, owner_address: str) -> ContractCallResult:
+        """Get token balance for an owner (read-only)"""
         try:
-            timestamp = int(datetime.now().timestamp())
-            token_id = self.generate_token_id(athlete_data.name, timestamp)
-            
-            # Validate inputs
-            if total_supply <= 0:
-                raise ValueError("Total supply must be positive")
-            if price_per_token <= 0:
-                raise ValueError("Price per token must be positive")
-            
-            price_stroops = int(price_per_token * STROOPS_PER_XLM)
+            args = [scval.Address(StellarAddress(owner_address))]
+            return await self._execute_contract_function("balance", args, read_only=True)
+        except Exception as e:
+            return ContractCallResult(
+                success=False,
+                error_message=str(e),
+                error_code="READ_ERROR"
+            )
+
+    async def mint(self, to_address: str, amount: int) -> ContractCallResult:
+        """Mint new tokens to an address"""
+        try:
+            if amount <= 0:
+                raise ValueError("Amount to mint must be positive")
             
             args = [
-                scval.Bytes(token_id),
-                scval.String(athlete_data.name),
-                scval.String(athlete_data.sport.value),
-                scval.String(f"{athlete_data.name[:3].upper()}{timestamp}"),
-                scval.U64(total_supply),
-                scval.U64(price_stroops),
-                scval.Address(StellarAddress(issuer_keypair.public_key))
+                scval.Address(StellarAddress(to_address)),
+                scval.I128(amount)
             ]
             
-            result = await self._execute_contract_function("create_athlete_token", args)
+            result = await self._execute_contract_function("mint", args, signer_keypair=self.admin_keypair)
             
             if result.success:
-                # Enhance result with token metadata
                 result.result_data.update({
-                    "token_id": token_id.hex(),
-                    "athlete_name": athlete_data.name,
-                    "token_symbol": f"{athlete_data.name[:3].upper()}{timestamp}",
-                    "price_per_token": float(price_per_token),
-                    "total_supply": total_supply,
-                    "issuer_address": issuer_keypair.public_key
+                    "to_address": to_address,
+                    "amount": amount
                 })
             
             return result
@@ -259,42 +227,28 @@ class SorobanContractManager:
                 error_message=str(e),
                 error_code="UNEXPECTED_ERROR"
             )
-    
-    async def create_campaign(
-        self,
-        token_id: str,
-        funding_goal: Decimal,
-        duration_days: int,
-        min_investment: Decimal
-    ) -> ContractCallResult:
-        """Create a funding campaign"""
+
+    async def transfer(self, from_address: str, to_address: str, amount: int) -> ContractCallResult:
+        """Transfer tokens from one address to another"""
         try:
-            # Validate inputs
-            if funding_goal <= 0:
-                raise ValueError("Funding goal must be positive")
-            if duration_days <= 0 or duration_days > 365:
-                raise ValueError("Duration must be between 1 and 365 days")
-            if min_investment <= 0:
-                raise ValueError("Minimum investment must be positive")
-            
-            funding_goal_stroops = int(funding_goal * STROOPS_PER_XLM)
-            min_investment_stroops = int(min_investment * STROOPS_PER_XLM)
+            if amount <= 0:
+                raise ValueError("Amount to transfer must be positive")
             
             args = [
-                scval.Bytes(bytes.fromhex(token_id)),
-                scval.U64(funding_goal_stroops),
-                scval.U32(duration_days),
-                scval.U64(min_investment_stroops)
+                scval.Address(StellarAddress(from_address)),
+                scval.Address(StellarAddress(to_address)),
+                scval.I128(amount)
             ]
             
-            result = await self._execute_contract_function("create_campaign", args)
+            # The 'from' address should sign the transfer
+            # For now, we'll use the admin_keypair, but in a real scenario, 'from' should sign
+            result = await self._execute_contract_function("transfer", args, signer_keypair=self.admin_keypair) 
             
             if result.success:
                 result.result_data.update({
-                    "token_id": token_id,
-                    "funding_goal": float(funding_goal),
-                    "duration_days": duration_days,
-                    "min_investment": float(min_investment)
+                    "from_address": from_address,
+                    "to_address": to_address,
+                    "amount": amount
                 })
             
             return result
@@ -524,46 +478,19 @@ contract_manager = SorobanContractManager(
     Keypair.from_secret(os.getenv("ADMIN_SECRET_KEY"))
 )
 
-# Event handlers
-async def handle_investment_event(event: Dict):
-    """Handle investment events"""
-    logger.info(f"Investment event: {event}")
-    # Add custom logic here
-
-async def handle_revenue_event(event: Dict):
-    """Handle revenue distribution events"""
-    logger.info(f"Revenue distribution event: {event}")
-    # Add custom logic here
-
-event_listener = EnhancedEventListener(
-    os.getenv("ATHLETE_TOKEN_CONTRACT"),
-    callback_handlers={
-        "investment": handle_investment_event,
-        "revenue_distribution": handle_revenue_event
-    }
-)
-
-batch_manager = BatchOperationManager(contract_manager)
-
-
 # Setup function
 async def setup_enhanced_soroban_integration():
     """Setup the enhanced Soroban integration"""
     try:
-        # Initialize contract
-        init_result = await contract_manager.initialize_contract()
-        
-        # Start event listener
-        asyncio.create_task(event_listener.start_listening())
-        
+        # The AthleteToken contract does not have an 'initialize' function.
+        # We only need to ensure the contract manager is ready.
         logger.info("Soroban integration setup completed")
         
         return {
             "status": "success",
             "contract_address": CONTRACT_ADDRESS,
             "admin_address": contract_manager.admin_keypair.public_key,
-            "initialization": init_result,
-            "event_listener": "started"
+            "message": "Contract manager initialized."
         }
         
     except Exception as e:
@@ -576,43 +503,50 @@ async def setup_enhanced_soroban_integration():
 
 # Example usage
 async def example_usage():
-    """Example of how to use the enhanced integration"""
+    """Example of how to use the AthleteToken contract functions"""
     
-    # Create an athlete token
-    athlete_data = AthleteData(
-        name="Example Athlete",
-        sport="football",  # Adjust based on your enum
-        age=25,
-        country="Brazil"
-    )
-    
-    issuer_keypair = Keypair.random()
-    
-    result = await contract_manager.create_athlete_token(
-        athlete_data=athlete_data,
-        total_supply=1000000,
-        price_per_token=Decimal("0.1"),
-        issuer_keypair=issuer_keypair
-    )
-    
-    if result.success:
-        logger.info(f"Token created successfully: {result.result_data}")
-        
-        # Create a campaign for the token
-        campaign_result = await contract_manager.create_campaign(
-            token_id=result.result_data["token_id"],
-            funding_goal=Decimal("100000"),
-            duration_days=30,
-            min_investment=Decimal("10.0")
-        )
-        
-        if campaign_result.success:
-            logger.info(f"Campaign created: {campaign_result.result_data}")
-        else:
-            logger.error(f"Campaign creation failed: {campaign_result.error_message}")
-    else:
-        logger.error(f"Token creation failed: {result.error_message}")
+    test_account_1 = Keypair.random().public_key
+    test_account_2 = Keypair.random().public_key
 
+    # Mint tokens to test_account_1
+    logger.info(f"Minting 1000 tokens to {test_account_1}")
+    mint_result = await contract_manager.mint(test_account_1, 1000)
+
+    if mint_result.success:
+        logger.info(f"Mint successful: {mint_result.result_data}")
+
+        # Check balance of test_account_1
+        balance_result_1 = await contract_manager.balance(test_account_1)
+        if balance_result_1.success:
+            logger.info(f"Balance of {test_account_1}: {balance_result_1.result_data}")
+        else:
+            logger.error(f"Failed to get balance for {test_account_1}: {balance_result_1.error_message}")
+
+        # Transfer tokens from test_account_1 to test_account_2
+        logger.info(f"Transferring 200 tokens from {test_account_1} to {test_account_2}")
+        transfer_result = await contract_manager.transfer(test_account_1, test_account_2, 200)
+
+        if transfer_result.success:
+            logger.info(f"Transfer successful: {transfer_result.result_data}")
+
+            # Check balances after transfer
+            balance_result_1_after = await contract_manager.balance(test_account_1)
+            balance_result_2_after = await contract_manager.balance(test_account_2)
+
+            if balance_result_1_after.success:
+                logger.info(f"Balance of {test_account_1} after transfer: {balance_result_1_after.result_data}")
+            else:
+                logger.error(f"Failed to get balance for {test_account_1} after transfer: {balance_result_1_after.error_message}")
+            
+            if balance_result_2_after.success:
+                logger.info(f"Balance of {test_account_2} after transfer: {balance_result_2_after.result_data}")
+            else:
+                logger.error(f"Failed to get balance for {test_account_2} after transfer: {balance_result_2_after.error_message}")
+
+        else:
+            logger.error(f"Transfer failed: {transfer_result.error_message}")
+    else:
+        logger.error(f"Mint failed: {mint_result.error_message}")
 
 if __name__ == "__main__":
     # Run example
