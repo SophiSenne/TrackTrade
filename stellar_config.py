@@ -3,6 +3,9 @@ import os
 from stellar_sdk import Network, Server, SorobanServer
 import logging
 import httpx
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +25,8 @@ server = Server(HORIZON_URL)
 soroban_server = SorobanServer(SOROBAN_RPC_URL)
 
 # Configuração do contrato
-CONTRACT_ADDRESS = os.getenv('ATHLETE_TOKEN_CONTRACT', 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQAHHAGK7Q')
-ADMIN_SECRET_KEY = os.getenv('ADMIN_SECRET_KEY', 'SAIPPNG3AGHSK2CLHIYQMVBPHISOOPT64MMW2PQGER2NIANN6TJU7')
+CONTRACT_ADDRESS = os.getenv('ATHLETE_TOKEN_CONTRACT')
+ADMIN_SECRET_KEY = os.getenv('ADMIN_SECRET_KEY')
 
 # Utilitários para testnet
 async def fund_account_testnet(public_key: str) -> bool:

@@ -12,6 +12,7 @@ from decimal import Decimal
 import asyncio
 from endpoints import router as router_endpoints
 from endpoints_soroban import router as soroban_router
+import os
 
 # Configuração da aplicação
 app = FastAPI(
@@ -28,5 +29,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(router_endpoints)
+@app.get("/")
+async def root():
+    return {"message": "TrackTrade API", "status": "healthy", "version": "1.0.0"}
+
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow(),
+        "version": "1.0.0"
+    }
+
+# app.include_router(router_endpoints)
 app.include_router(soroban_router)
+
+if __name__ == "__main__":
+    uvicorn.run(
+        "main:app",
+        host=os.getenv("API_HOST", "0.0.0.0"),
+        port=int(os.getenv("API_PORT", 8000)),
+        reload=os.getenv("API_RELOAD", "false").lower() == "true"
+    )
