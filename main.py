@@ -11,6 +11,7 @@ import uvicorn
 from decimal import Decimal
 import asyncio
 from endpoints import router
+from database_endpoints import router as db_router
 
 # Configuração da aplicação
 app = FastAPI(
@@ -27,4 +28,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(router)
+# Incluir routers
+app.include_router(router)  # Endpoints originais
+app.include_router(db_router, prefix="/api/v1")  # Novos endpoints com prefixo
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
