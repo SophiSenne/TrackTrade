@@ -10,7 +10,8 @@ import json
 import uvicorn
 from decimal import Decimal
 import asyncio
-from endpoints import router
+from endpoints import router as router_endpoints
+from endpoints_soroban import router as soroban_router
 
 # Configuração da aplicação
 app = FastAPI(
@@ -27,4 +28,5 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(router)
+app.include_router(router_endpoints)
+app.include_router(soroban_router)
