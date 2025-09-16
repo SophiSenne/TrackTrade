@@ -1,1 +1,0 @@
-/home/inteli/Documents/TrackTrade/token-price-smart-contract/src/athlete_token/target/wasm32-unknown-unknown/release/libathlete_token.rlib: /home/inteli/Documents/TrackTrade/token-price-smart-contract/src/athlete_token/src/lib.rs
