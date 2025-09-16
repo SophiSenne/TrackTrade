@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+﻿from fastapi import APIRouter, HTTPException
 from typing import Optional, Dict
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -7,7 +7,7 @@ import json
 from stellar_sdk import Keypair, Asset
 from stellar_config import HORIZON_URL
 
-from utils import calculate_athlete_valuation
+from utils import calculate_athlete_valuation, generate_token_symbol
 from database_config import execute_query, execute_single_query, init_database
 from pydantic_models import (
     CreateAthleteTokenRequest,
@@ -21,7 +21,7 @@ from pydantic_models import (
 
 router = APIRouter()
 
-# Verificar banco de dados na primeira execução
+# Verificar banco de dados na primeira execuÃ§Ã£o
 try:
     init_database()
 except Exception as e:
@@ -30,10 +30,15 @@ except Exception as e:
 @router.get("/")
 async def root():
     return {
-        "message": "SportToken API - Tokenização de Atletas",
+        "message": "SportToken API - TokenizaÃ§Ã£o de Atletas",
         "version": "1.0.0",
         "network": "Stellar Testnet" if "testnet" in HORIZON_URL else "Stellar Mainnet"
     }
+
+@router.get("/health")
+async def health_check():
+    """Endpoint simples para verificar se a API estÃ¡ funcionando"""
+    return {"status": "ok", "message": "API is running"}
 
 @router.post("/athletes/create")
 async def create_athlete(request: CreateAthleteTokenRequest):
@@ -58,7 +63,7 @@ async def create_athlete(request: CreateAthleteTokenRequest):
             athlete_data.name,
             athlete_data.age,
             athlete_data.sport.value,
-            "professional",  # nível padrão
+            "professional",  # nÃ­vel padrÃ£o
             athlete_data.country,
             athlete_data.bio,
             performance.wins if hasattr(performance, 'wins') else 0,
@@ -72,14 +77,17 @@ async def create_athlete(request: CreateAthleteTokenRequest):
         athlete_result = execute_single_query(athlete_query, athlete_params)
         athlete_id = athlete_result['id']
         
+        # Gerar símbolo do token automaticamente baseado no nome do atleta
+        token_symbol = generate_token_symbol(athlete_data.name)
+        
         # Gerar keypairs para o emissor e distribuidor
         issuer_keypair = Keypair.random()
         distributor_keypair = Keypair.random()
         
-        # Calcular valorização do atleta
+        # Calcular valorizaÃ§Ã£o do atleta
         athlete_valuation = calculate_athlete_valuation(athlete_data, performance)
         
-        # Calcular preço ajustado
+        # Calcular preÃ§o ajustado
         adjusted_price = request.tokenomics.price_per_token * Decimal(str(athlete_valuation / 50.0))
         
         # Criar o token do atleta
@@ -98,8 +106,8 @@ async def create_athlete(request: CreateAthleteTokenRequest):
         
         token_params = (
             athlete_id,
-            1,  # created_by - usuário padrão
-            request.tokenomics.token_symbol,
+            1,  # created_by - usuÃ¡rio padrÃ£o
+            token_symbol,  # usar o símbolo gerado automaticamente
             request.tokenomics.total_supply,
             float(adjusted_price),
             float(request.tokenomics.minimum_investment) if hasattr(request.tokenomics, 'minimum_investment') else 10.0,
@@ -121,7 +129,7 @@ async def create_athlete(request: CreateAthleteTokenRequest):
             "athlete_id": athlete_id,
             "token_id": token_id,
             "athlete_name": athlete_data.name,
-            "token_symbol": request.tokenomics.token_symbol,
+            "token_symbol": token_symbol,  # retornar o símbolo gerado
             "athlete_valuation": athlete_valuation,
             "adjusted_price_per_token": float(adjusted_price),
             "issuer_address": issuer_keypair.public_key,
@@ -186,7 +194,7 @@ async def get_athletes():
 
 @router.get("/tokens")
 async def get_all_tokens(status: Optional[str] = None, sport: Optional[str] = None):
-    """Lista todos os tokens disponíveis com filtros opcionais"""
+    """Lista todos os tokens disponÃ­veis com filtros opcionais"""
     
     query = """
         SELECT 
@@ -257,12 +265,12 @@ async def activate_token(token_id: int):
     token = execute_single_query(token_query, (token_id,))
     
     if not token:
-        raise HTTPException(status_code=404, detail="Token não encontrado")
+        raise HTTPException(status_code=404, detail="Token nÃ£o encontrado")
     
     if token["status"] != 'draft':
-        raise HTTPException(status_code=400, detail="Token já foi ativado ou está em outro estado")
+        raise HTTPException(status_code=400, detail="Token jÃ¡ foi ativado ou estÃ¡ em outro estado")
     
-    # Verificar se a campanha ainda está dentro do prazo
+    # Verificar se a campanha ainda estÃ¡ dentro do prazo
     if datetime.now() > token["campaign_end_date"]:
         raise HTTPException(status_code=400, detail="Campanha expirada")
     
@@ -276,7 +284,7 @@ async def activate_token(token_id: int):
             "athlete_name": token["athlete_name"],
             "status": "activated",
             "campaign_end_date": token["campaign_end_date"].isoformat(),
-            "message": f"Token ativado! Campanha ativa até {token['campaign_end_date'].strftime('%d/%m/%Y')}"
+            "message": f"Token ativado! Campanha ativa atÃ© {token['campaign_end_date'].strftime('%d/%m/%Y')}"
         }
         
     except Exception as e:
@@ -296,21 +304,21 @@ async def invest_in_athlete(investment: InvestmentRequest):
     token = execute_single_query(token_query, (investment.token_id,))
     
     if not token:
-        raise HTTPException(status_code=404, detail="Token não encontrado")
+        raise HTTPException(status_code=404, detail="Token nÃ£o encontrado")
     
     if token["status"] != 'active':
-        raise HTTPException(status_code=400, detail="Token não está ativo para investimentos")
+        raise HTTPException(status_code=400, detail="Token nÃ£o estÃ¡ ativo para investimentos")
     
-    # Verificar se a campanha ainda está ativa
+    # Verificar se a campanha ainda estÃ¡ ativa
     if datetime.now() > token["campaign_end_date"]:
         raise HTTPException(status_code=400, detail="Campanha expirada")
     
-    # Verificar se ainda há espaço para mais investimento
+    # Verificar se ainda hÃ¡ espaÃ§o para mais investimento
     remaining_funding = float(token["funding_goal"]) - float(token["total_raised"])
     if investment.amount_xlm > remaining_funding:
         raise HTTPException(
             status_code=400, 
-            detail=f"Valor de investimento excede o necessário. Restam apenas {remaining_funding} XLM"
+            detail=f"Valor de investimento excede o necessÃ¡rio. Restam apenas {remaining_funding} XLM"
         )
     
     # Calcular quantidade de tokens a comprar
@@ -329,7 +337,7 @@ async def invest_in_athlete(investment: InvestmentRequest):
         
         investment_result = execute_single_query(investment_query, (
             investment.token_id,
-            1,  # user_id padrão
+            1,  # user_id padrÃ£o
             float(investment.amount_xlm),
             tokens_to_purchase,
             price_per_token,
@@ -378,7 +386,7 @@ async def invest_in_athlete(investment: InvestmentRequest):
 async def get_dashboard_summary():
     """Retorna resumo geral da plataforma"""
     
-    # Estatísticas gerais
+    # EstatÃ­sticas gerais
     total_tokens_query = "SELECT COUNT(*) as total FROM athlete_tokens"
     total_tokens = execute_single_query(total_tokens_query)["total"]
     
@@ -393,7 +401,7 @@ async def get_dashboard_summary():
     """
     totals = execute_single_query(totals_query)
     
-    # Estatísticas por esporte
+    # EstatÃ­sticas por esporte
     sports_query = """
         SELECT 
             a.sport,
@@ -420,55 +428,4 @@ async def get_dashboard_summary():
             }
             for sport in sports_stats
         }
-    }
-
-@router.get("/athletes")
-async def get_athletes():
-    """Lista todos os atletas cadastrados"""
-    
-    query = """
-        SELECT 
-            a.id, a.name, a.age, a.sport, a.country, a.bio,
-            a.wins, a.losses, a.ranking_position, a.recent_performance_score,
-            a.potential_score, a.media_exposure_score, a.created_at,
-            at.id as token_id, at.token_symbol, at.status as token_status,
-            at.total_raised, at.funding_goal, at.athlete_valuation,
-            at.adjusted_price_per_token, at.investors_count
-        FROM athletes a
-        LEFT JOIN athlete_tokens at ON a.id = at.athlete_id
-        ORDER BY a.created_at DESC
-    """
-    
-    athletes = execute_query(query)
-    
-    return {
-        "athletes": [
-            {
-                "id": athlete["id"],
-                "name": athlete["name"],
-                "age": athlete["age"],
-                "sport": athlete["sport"],
-                "country": athlete["country"],
-                "bio": athlete["bio"],
-                "wins": athlete["wins"],
-                "losses": athlete["losses"],
-                "ranking_position": athlete["ranking_position"],
-                "recent_performance_score": float(athlete["recent_performance_score"]) if athlete["recent_performance_score"] else 0,
-                "potential_score": float(athlete["potential_score"]) if athlete["potential_score"] else 0,
-                "media_exposure_score": float(athlete["media_exposure_score"]) if athlete["media_exposure_score"] else 0,
-                "created_at": athlete["created_at"].isoformat() if athlete["created_at"] else None,
-                "token": {
-                    "id": athlete["token_id"],
-                    "symbol": athlete["token_symbol"],
-                    "status": athlete["token_status"],
-                    "total_raised": float(athlete["total_raised"]) if athlete["total_raised"] else 0,
-                    "funding_goal": float(athlete["funding_goal"]) if athlete["funding_goal"] else 0,
-                    "valuation": float(athlete["athlete_valuation"]) if athlete["athlete_valuation"] else 0,
-                    "price_per_token": float(athlete["adjusted_price_per_token"]) if athlete["adjusted_price_per_token"] else 0,
-                    "investors_count": athlete["investors_count"] if athlete["investors_count"] else 0
-                } if athlete["token_id"] else None
-            }
-            for athlete in athletes
-        ],
-        "total": len(athletes)
     }

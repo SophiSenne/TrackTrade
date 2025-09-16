@@ -2,6 +2,27 @@ from pydantic_models import AthleteData, AthleteLevel, PerformanceMetrics
 from stellar_sdk import Keypair, Asset, TransactionBuilder
 from stellar_config import server, STELLAR_NETWORK
 from fastapi import HTTPException
+import re
+import random
+
+def generate_token_symbol(athlete_name: str) -> str:
+    """Gera um símbolo de token único baseado no nome do atleta"""
+    # Remove acentos e caracteres especiais
+    name_clean = re.sub(r'[^\w\s]', '', athlete_name.upper())
+    
+    # Pega as primeiras letras de cada palavra
+    words = name_clean.split()
+    if len(words) >= 2:
+        symbol = words[0][:3] + words[-1][:3]  # Primeiro nome + último sobrenome
+    else:
+        symbol = words[0][:6] if words else "ATH"
+    
+    # Adiciona números aleatórios se necessário para completar
+    while len(symbol) < 4:
+        symbol += str(random.randint(0, 9))
+    
+    # Limita a 12 caracteres (máximo permitido)
+    return symbol[:12]
 
 def calculate_athlete_valuation(athlete: AthleteData, performance: PerformanceMetrics) -> float:
     """Calcula a valorização do atleta baseada em dados objetivos"""
